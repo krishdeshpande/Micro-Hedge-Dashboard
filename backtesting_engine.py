@@ -13,10 +13,8 @@ def get_data(tickers, start, end):
     
     for ticker in tickers:
         try:
-            # NEW: Download tickers one by one
             data = yf.download(ticker, start=start, end=end, auto_adjust=True, progress=False)
             if not data.empty:
-                # Keep only the 'Close' price and rename the column to the ticker name
                 all_data.append(data[['Close']].rename(columns={'Close': ticker}))
             else:
                 print(f"Warning: No data returned for {ticker}. Skipping.")
@@ -26,7 +24,6 @@ def get_data(tickers, start, end):
     if not all_data:
         return pd.DataFrame()
 
-    # Combine all successful downloads into a single dataframe
     combined_df = pd.concat(all_data, axis=1)
     combined_df.ffill(inplace=True) # Forward-fill missing values
     return combined_df
@@ -62,15 +59,16 @@ def run_full_backtest(capital, start_date, end_date, stock_list, risk_off_pct, r
     
     price_data = get_data(all_tickers, start_date, end_date)
     
-    # Validation Step: Check if essential tickers were successfully downloaded
     for ticker in essential_tickers:
         if ticker not in price_data.columns:
             print(f"CRITICAL ERROR: Failed to fetch essential ticker data for {ticker}.")
             return pd.DataFrame(), pd.DataFrame()
         
-        # --- THIS IS THE DEFINITIVE FIX ---
-        # The line is changed to be more explicit to avoid the ValueError
-        if price_data[ticker].notna().any() == False:
+        # --- DEFINITIVE FIX v3 ---
+        # This check is logically identical to the previous one but uses a different
+        # function (`isnull().all()`) which is less prone to this specific bug.
+        is_all_nan = price_data[ticker].isnull().all()
+        if is_all_nan:
             print(f"CRITICAL ERROR: Ticker {ticker} contains only null values.")
             return pd.DataFrame(), pd.DataFrame()
 
@@ -108,7 +106,8 @@ def run_full_backtest(capital, start_date, end_date, stock_list, risk_off_pct, r
         if row['signal_risk_on']:
             new_mode = "Attack"
             selected_stocks = top_stocks.iloc[i]
-            daily_return = row[selected_stocks].mean()
+            if not all(pd.isna(row[selected_stocks])):
+                daily_return = row[selected_stocks].mean()
             assets = selected_stocks
         elif row['signal_risk_off']:
             new_mode = "Defense"
