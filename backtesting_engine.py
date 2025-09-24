@@ -1,4 +1,4 @@
-# backtesting_engine.py (Most Robust Version)
+# backtesting_engine.py (Definitive Fix)
 
 import yfinance as yf
 import pandas as pd
@@ -25,7 +25,7 @@ def get_data(tickers, start, end):
         return pd.DataFrame()
 
     combined_df = pd.concat(all_data, axis=1)
-    combined_df.ffill(inplace=True) # Forward-fill missing values
+    combined_df.ffill(inplace=True) 
     return combined_df
 
 def calculate_performance_metrics(cumulative_returns, initial_capital):
@@ -59,22 +59,20 @@ def run_full_backtest(capital, start_date, end_date, stock_list, risk_off_pct, r
     
     price_data = get_data(all_tickers, start_date, end_date)
     
+    # --- DEFINITIVE FIX: REWRITTEN VALIDATION LOGIC ---
+    # 1. Proactively drop any columns that are entirely empty.
+    price_data.dropna(axis='columns', how='all', inplace=True)
+
+    # 2. Now, simply check if the essential tickers still exist as columns. This avoids the ValueError.
     for ticker in essential_tickers:
         if ticker not in price_data.columns:
-            print(f"CRITICAL ERROR: Failed to fetch essential ticker data for {ticker}.")
-            return pd.DataFrame(), pd.DataFrame()
-        
-        # --- DEFINITIVE FIX v3 ---
-        # This check is logically identical to the previous one but uses a different
-        # function (`isnull().all()`) which is less prone to this specific bug.
-        is_all_nan = price_data[ticker].isnull().all()
-        if is_all_nan:
-            print(f"CRITICAL ERROR: Ticker {ticker} contains only null values.")
+            print(f"CRITICAL ERROR: Failed to fetch valid data for essential ticker: {ticker}.")
             return pd.DataFrame(), pd.DataFrame()
 
-    valid_stock_list = [t for t in stock_list if t in price_data.columns and not price_data[t].isnull().all()]
+    # 3. Re-create the valid stock list from the cleaned data.
+    valid_stock_list = [t for t in stock_list if t in price_data.columns]
     if len(valid_stock_list) < 2:
-        print(f"WARNING: Not enough valid stocks for dynamic strategy. Need at least 2.")
+        print(f"WARNING: Not enough valid stocks survived the data cleaning. Need at least 2.")
         return pd.DataFrame(), pd.DataFrame()
 
     returns = price_data.pct_change().dropna(how='all')
@@ -106,7 +104,8 @@ def run_full_backtest(capital, start_date, end_date, stock_list, risk_off_pct, r
         if row['signal_risk_on']:
             new_mode = "Attack"
             selected_stocks = top_stocks.iloc[i]
-            if not all(pd.isna(row[selected_stocks])):
+            # Add a check to ensure selected stocks data is available for the day
+            if not all(pd.isna(row.get(s) for s in selected_stocks)):
                 daily_return = row[selected_stocks].mean()
             assets = selected_stocks
         elif row['signal_risk_off']:
