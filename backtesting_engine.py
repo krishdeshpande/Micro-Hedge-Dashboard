@@ -1,4 +1,4 @@
-# backtesting_engine.py (Definitive Fix)
+# backtesting_engine.py (Definitive Fix v2)
 
 import yfinance as yf
 import pandas as pd
@@ -59,17 +59,13 @@ def run_full_backtest(capital, start_date, end_date, stock_list, risk_off_pct, r
     
     price_data = get_data(all_tickers, start_date, end_date)
     
-    # --- DEFINITIVE FIX: REWRITTEN VALIDATION LOGIC ---
-    # 1. Proactively drop any columns that are entirely empty.
     price_data.dropna(axis='columns', how='all', inplace=True)
 
-    # 2. Now, simply check if the essential tickers still exist as columns. This avoids the ValueError.
     for ticker in essential_tickers:
         if ticker not in price_data.columns:
             print(f"CRITICAL ERROR: Failed to fetch valid data for essential ticker: {ticker}.")
             return pd.DataFrame(), pd.DataFrame()
 
-    # 3. Re-create the valid stock list from the cleaned data.
     valid_stock_list = [t for t in stock_list if t in price_data.columns]
     if len(valid_stock_list) < 2:
         print(f"WARNING: Not enough valid stocks survived the data cleaning. Need at least 2.")
@@ -86,7 +82,14 @@ def run_full_backtest(capital, start_date, end_date, stock_list, risk_off_pct, r
     returns['signal_risk_on'] = ((upward_move > (risk_on_pct / 100)) & (drawdown > (-risk_off_pct / 100))).shift(1).fillna(False)
     
     returns['buy_and_hold'] = returns[benchmark_index]
-    returns['safe_hedge'] = np.where(returns['signal_risk_off'], returns[safe_haven_etf], returns[neutral_etf])
+    
+    # --- DEFINITIVE FIX v4: USING PANDAS .loc INDEXING TO BYPASS NUMPY BUG ---
+    # Set the default return to the neutral ETF
+    returns['safe_hedge'] = returns[neutral_etf]
+    # Find the specific days where the signal is True
+    hedge_days = returns['signal_risk_off'] == True
+    # On only those days, overwrite the value with the safe haven return
+    returns.loc[hedge_days, 'safe_hedge'] = returns.loc[hedge_days, safe_haven_etf]
 
     momentum = price_data[valid_stock_list].pct_change(60).shift(1)
     top_stocks = momentum.apply(lambda row: row.nlargest(2).index.tolist(), axis=1)
@@ -104,7 +107,6 @@ def run_full_backtest(capital, start_date, end_date, stock_list, risk_off_pct, r
         if row['signal_risk_on']:
             new_mode = "Attack"
             selected_stocks = top_stocks.iloc[i]
-            # Add a check to ensure selected stocks data is available for the day
             if not all(pd.isna(row.get(s) for s in selected_stocks)):
                 daily_return = row[selected_stocks].mean()
             assets = selected_stocks
