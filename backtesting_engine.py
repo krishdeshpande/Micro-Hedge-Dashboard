@@ -1,4 +1,4 @@
-# backtesting_engine.py (Definitive Fix v5 - Fully Vectorized)
+# backtesting_engine.py (Definitive Fix v6 - NumPy Core)
 
 import yfinance as yf
 import pandas as pd
@@ -63,7 +63,7 @@ def run_full_backtest(capital, start_date, end_date, stock_list, risk_off_pct, r
 
     returns = price_data.pct_change()
 
-    # --- SIGNAL GENERATION (REMAINS THE SAME) ---
+    # --- SIGNAL GENERATION ---
     rolling_max = price_data[benchmark_index].rolling(window=20).max()
     drawdown = (price_data[benchmark_index] / rolling_max) - 1
     rolling_min = price_data[benchmark_index].rolling(window=20).min()
@@ -72,36 +72,38 @@ def run_full_backtest(capital, start_date, end_date, stock_list, risk_off_pct, r
     signal_risk_off = (drawdown < (-risk_off_pct / 100)).shift(1).fillna(False)
     signal_risk_on = ((upward_move > (risk_on_pct / 100)) & (drawdown > (-risk_off_pct / 100))).shift(1).fillna(False)
     
-    # --- STRATEGY SIMULATION (COMPLETELY RE-ENGINEERED) ---
+    # --- STRATEGY SIMULATION (RE-ENGINEERED WITH NUMPY CORE) ---
     
     # Strategy 1: Buy and Hold
     returns['buy_and_hold'] = returns[benchmark_index]
 
-    # Strategy 2: Safe Hedge (using vectorized .loc)
-    returns['safe_hedge'] = returns[neutral_etf]
-    returns.loc[signal_risk_off, 'safe_hedge'] = returns.loc[signal_risk_off, safe_haven_etf]
+    # Strategy 2: Safe Hedge (using pure numpy arrays to bypass pandas bugs)
+    returns['safe_hedge'] = np.where(
+        signal_risk_off.values,
+        returns[safe_haven_etf].values,
+        returns[neutral_etf].values
+    )
 
-    # Strategy 3: Dynamic Risk Dial (Fully Vectorized)
+    # Strategy 3: Dynamic Risk Dial
     momentum = price_data[valid_stock_list].pct_change(60).shift(1)
     top_stocks_series = momentum.apply(lambda row: row.nlargest(2).index.tolist(), axis=1)
-    
-    # Calculate returns for the top stocks for each day
     top_stock_returns = returns.apply(lambda row: row[top_stocks_series.loc[row.name]].mean(), axis=1)
 
-    conditions = [signal_risk_on, signal_risk_off]
-    choices = [top_stock_returns, returns[safe_haven_etf]]
-    returns['dynamic_strat'] = np.select(conditions, choices, default=returns[neutral_etf])
+    returns['dynamic_strat'] = np.select(
+        [signal_risk_on.values, signal_risk_off.values],
+        [top_stock_returns.values, returns[safe_haven_etf].values],
+        default=returns[neutral_etf].values
+    )
     
-    # --- TRADE LOG GENERATION (VECTORIZED) ---
+    # --- TRADE LOG GENERATION ---
     mode_conditions = [signal_risk_on, signal_risk_off]
     mode_choices = ["Attack", "Defense"]
     log_data = pd.DataFrame(index=returns.index)
     log_data['Mode'] = np.select(mode_conditions, mode_choices, default="Neutral")
-    log_data['Assets'] = log_data['Mode'].apply(lambda x: neutral_etf) # default
+    log_data['Assets'] = log_data['Mode'].apply(lambda x: neutral_etf)
     log_data.loc[log_data['Mode'] == 'Defense', 'Assets'] = safe_haven_etf
     log_data.loc[log_data['Mode'] == 'Attack', 'Assets'] = top_stocks_series
 
-    # Find where the mode changes
     log_data['prev_mode'] = log_data['Mode'].shift(1)
     trade_log_df = log_data[log_data['Mode'] != log_data['prev_mode']].copy()
     trade_log_df.rename(columns={'Assets': 'New Assets'}, inplace=True)
@@ -109,7 +111,6 @@ def run_full_backtest(capital, start_date, end_date, stock_list, risk_off_pct, r
     trade_log_df = trade_log_df[['Mode', 'Action', 'New Assets']]
     trade_log_df.reset_index(inplace=True)
     trade_log_df.rename(columns={'index':'Date'}, inplace=True)
-
 
     # --- FINAL CUMULATIVE CALCULATION ---
     results = pd.DataFrame(index=returns.index)
