@@ -101,7 +101,10 @@ def run_full_backtest(capital, start_date, end_date, stock_list, risk_off_pct, r
     risk_off_days = returns['signal_risk_off'] == True
     risk_on_days = returns['signal_risk_on'] == True
     returns.loc[risk_off_days, 'dynamic_strat'] = returns.loc[risk_off_days, safe_haven_etf]
-    returns.loc[risk_on_days, 'dynamic_strat'] = top_stock_returns[risk_on_days]
+    
+    # --- THIS IS THE CORRECTED LINE ---
+    # Using .loc on both sides of the assignment forces perfect index alignment
+    returns.loc[risk_on_days, 'dynamic_strat'] = top_stock_returns.loc[risk_on_days]
     
     # --- TRADE LOG GENERATION ---
     mode_conditions = [returns['signal_risk_on'], returns['signal_risk_off']]
