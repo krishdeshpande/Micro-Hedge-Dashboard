@@ -65,12 +65,12 @@ def run_full_backtest(capital, start_date, end_date, stock_list, risk_off_pct, r
     # --- THIS IS THE CORRECTED VALIDATION LOGIC ---
     # Validation Step: Check if essential tickers were successfully downloaded
     for ticker in essential_tickers:
-        # First, check if the column exists at all
         if ticker not in price_data.columns:
             print(f"CRITICAL ERROR: Failed to fetch essential ticker data for {ticker}.")
             return pd.DataFrame(), pd.DataFrame()
-        # If it exists, now check if it's entirely empty
-        if price_data[ticker].isnull().all():
+        
+        # New, more robust check for all null values
+        if not price_data[ticker].notna().any():
             print(f"CRITICAL ERROR: Ticker {ticker} contains only null values.")
             return pd.DataFrame(), pd.DataFrame()
 
