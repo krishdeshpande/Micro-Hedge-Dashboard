@@ -92,10 +92,12 @@ def run_full_backtest(capital, start_date, end_date, stock_list, risk_off_pct, r
 
     # Now drop NaNs from the main returns dataframe
     returns.dropna(inplace=True)
-    # Re-align signals and top_stock_returns with the now smaller returns dataframe
-    signal_risk_off = signal_risk_off[returns.index]
-    signal_risk_on = signal_risk_on[returns.index]
-    top_stock_returns = top_stock_returns[returns.index]
+    
+    # --- THIS IS THE CORRECTED SECTION ---
+    # Re-align signals and top_stock_returns with the now smaller returns dataframe using .loc
+    signal_risk_off = signal_risk_off.loc[returns.index]
+    signal_risk_on = signal_risk_on.loc[returns.index]
+    top_stock_returns = top_stock_returns.loc[returns.index]
 
     returns['dynamic_strat'] = np.select(
         [signal_risk_on.values, signal_risk_off.values],
